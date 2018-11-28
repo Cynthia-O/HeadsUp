@@ -1,0 +1,81 @@
+#Stage 1 tests the predictive value of three first-quarter metrics for end-semester grade outcome
+#Metrics are: ranked performance, summed performance, and first major grade (e.g., exam) score
+#Students who drop the course are not yet included in Stage 1
+
+#user must enter information in lines 7, 8, 11, and 13
+import os
+os.listdir('[course folder path]')
+primary_df=pd.read_csv(r"[.csv file path]",index_col=False)
+#comps file must contain sum_course_points, exam1, and Q1_sum_points columns, titled exactly as such
+#haven't figured out a way to automate this yet, because the positions of first-quarter columns are unpredictable
+comps=pd.read_csv(r"[second .csv file path]",index_col=False)
+#what is the upper boundary of an F/failing grade in this course? replace 505 with that value
+F=505
+import pandas as pd
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+##clean data of text inputs
+cleaned_df=primary_df
+#primary will retain text columns that can be merged later, if desired
+cleaned_df.replace(to_replace='[^0-9.]',value='',regex=True,inplace=True)
+cleaned_df=cleaned_df.replace('\s+',np.nan,regex=True).replace('',np.nan)
+cleaned_df=cleaned_df.apply(pd.to_numeric,errors='ignore')
+cleaned_df=cleaned_df.select_dtypes(include='float',exclude='object')
+##get rid of columns that have NaN for more than half of students (insufficiently entered grades)
+#also get rid of columns that have outlier values (lingering dates, student IDs, course IDs)
+cleaned_df.dropna(axis='columns',thresh=len(cleaned_df)*0.5,inplace=True)
+for column in cleaned_df:
+    if cleaned_df[column].median(skipna=True)>110:
+            cleaned_df.drop([column],axis=1,inplace=True)
+##create a ranked dataframe reflecting student rank in each of these columns
+rankedcleaned_df=cleaned_df.rank(axis=0,method='max',na_option='top',ascending=True)
+list(rankedcleaned_df)
+rankedcleaned_df.to_csv(r"C:\\Users\\User1\\Desktop\\rankedcleaned_df.csv")
+##sum ranks for each student and FLAG worrisome lowest summed ranks
+rankedcleaned_df['Q1_sum_ranks']=rankedcleaned_df.sum(axis=1)
+rankedcleaned_df['lowest_quantile']=np.where(rankedcleaned_df['Q1_sum_ranks']<=rankedcleaned_df['Q1_sum_ranks'].quantile(q=0.25),'worrisome','ok')
+##pull Q1_sum_points and sum_course_points into this from a pre-prepared comps file
+rankedcleaned_df['sum_course_points']=comps['sum_course_points']
+rankedcleaned_df['Q1_sum_points']=comps['Q1_sum_points']
+rankedcleaned_df['exam_1']=(comps['exam1'])
+##use matplotlib.pyplot and scipy to visually and statistically compare predictive value of ranks vs. points
+pyplotprepped=rankedcleaned_df[['Q1_sum_ranks','sum_course_points']].dropna(axis=0)
+print(stats.spearmanr(pyplotprepped['Q1_sum_ranks'],pyplotprepped['sum_course_points']))
+pyplotprepped=rankedcleaned_df[['Q1_sum_points','sum_course_points']].dropna(axis=0)
+print(stats.spearmanr(pyplotprepped['Q1_sum_points'],pyplotprepped['sum_course_points']))
+pyplotprepped=rankedcleaned_df[['exam_1','sum_course_points']].dropna(axis=0)
+print(stats.spearmanr(pyplotprepped['exam_1'],pyplotprepped['sum_course_points']))
+#now to make plots, starting with the rank-based prediction
+plt.figure(figsize=(5,9))
+plt.subplot(2,1,1)
+plt.title('A. Final Course Points by Q1 Rank Sum')
+plt.ylabel('Q1 rank sum')
+plt.xlabel('Final course points')
+plt.scatter(rankedcleaned_df['sum_course_points'],rankedcleaned_df['Q1_sum_ranks'],s=((len(rankedcleaned_df.index)/3)*(rankedcleaned_df['Q1_sum_points'].max())/rankedcleaned_df['Q1_sum_points']),alpha=0.5)
+max=rankedcleaned_df['Q1_sum_ranks'].max()
+min=rankedcleaned_df['Q1_sum_ranks'].min()
+plt.plot([F,F],[min,max],alpha=0.25,c='grey')
+max=rankedcleaned_df['sum_course_points'].max()
+min=rankedcleaned_df['sum_course_points'].min()
+quant1=rankedcleaned_df['Q1_sum_ranks'].quantile(q=0.25)
+plt.plot([min,max],[quant1,quant1],alpha=0.25,c='grey')
+#ok! repeat, but this time using Q1 sum points instead of Q1 sum ranks
+plt.subplot(2,1,2)
+plt.title('B. Final Course Points by Q1 Points Sum')
+plt.ylabel('Q1 points sum')
+plt.xlabel('Final course points')
+plt.scatter(rankedcleaned_df['sum_course_points'],rankedcleaned_df['Q1_sum_points'],s=((len(rankedcleaned_df.index)/3)*(rankedcleaned_df['Q1_sum_ranks'].max())/rankedcleaned_df['Q1_sum_ranks']),alpha=0.5)
+max=rankedcleaned_df['Q1_sum_points'].max()
+min=rankedcleaned_df['Q1_sum_points'].min()
+plt.plot([F,F],[min,max],alpha=0.25,c='grey')
+max=rankedcleaned_df['sum_course_points'].max()
+min=rankedcleaned_df['sum_course_points'].min()
+quant1=rankedcleaned_df['Q1_sum_points'].quantile(q=0.25)
+plt.plot([min,max],[quant1,quant1],alpha=0.25,c='grey')
+plt.tight_layout()
+
+#note1: works better on larger data sets, which is good - that's kind of the whole point
+#note2: handled super-complicated grading scheme very well, which is awesome
+#note3: does not handle composite/repeated information columns well
+#note4: does not yet incorporate student attrition (course drops)
